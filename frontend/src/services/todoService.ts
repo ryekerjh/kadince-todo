@@ -212,11 +212,20 @@ export function createTodoService(): TodoService {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
       const healthUrl = baseUrl.replace('/api', '/health');
-      await fetch(healthUrl, {
+      const response = await fetch(healthUrl, {
         headers: {
           'ngrok-skip-browser-warning': 'true'
         }
       });
+
+      if (!response.ok) {
+        throw new Error(`Health check failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.status !== 'ok') {
+        throw new Error('Health check returned invalid status');
+      }
       
       if (!isBackendAvailable) {
         isBackendAvailable = true;
