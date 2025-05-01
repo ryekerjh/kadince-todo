@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import todosRouter from './todos';
+import todosRouter from './routes/todoRoutes';
 
 dotenv.config();
 
@@ -17,7 +17,7 @@ app.get('/health', (req, res) => {
 });
 
 // API routes
-app.use('/api/todos', todosRouter);
+app.use('/api', todosRouter);
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
