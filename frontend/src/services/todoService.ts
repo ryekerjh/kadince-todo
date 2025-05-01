@@ -29,7 +29,9 @@ export class ApiTodoService implements TodoService {
       
       // First check if the response is ok
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorMessage = `Server error! status: ${response.status}`;
+        toast.error(errorMessage);
+        throw new Error(errorMessage);
       }
       
       // Return null for 204 No Content responses
@@ -43,10 +45,14 @@ export class ApiTodoService implements TodoService {
       } catch (parseError) {
         console.error('Failed to parse JSON response:', parseError);
         console.error('Response text:', await response.text());
+        toast.error('Invalid response from server');
         throw new Error('Invalid JSON response from server');
       }
     } catch (error) {
       console.error('API Error:', error);
+      if (error instanceof Error) {
+        toast.error('Backend service is down. Please try again later.');
+      }
       throw error;
     }
   }
@@ -297,7 +303,19 @@ export function createTodoService(): TodoService {
       return async function (...args: unknown[]) {
         try {
           if (!isBackendAvailable) {
-            throw new Error('Backend unavailable');
+            toast.error('Backend unavailable. Using local storage.', {
+              duration: 4000,
+              position: 'bottom-right',
+              style: {
+                background: '#333',
+                color: '#fff',
+                borderRadius: '8px',
+                padding: '16px',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+              },
+              icon: '⚠️',
+            });
+            return await (localStorageService[prop as TodoServiceMethods] as (...args: unknown[]) => Promise<unknown>)(...args);
           }
           
           // Special handling for delete operations
@@ -309,27 +327,68 @@ export function createTodoService(): TodoService {
               // If successful, also delete from localStorage
               await localStorageService.deleteTodo(id);
               return;
-            } catch {
-              console.error('Failed to delete from backend');
-              throw new Error('Failed to delete from backend');
+            } catch (error) {
+              console.error('Failed to delete from backend:', error);
+              toast.error('Failed to delete from backend. Using local storage.', {
+                duration: 4000,
+                position: 'bottom-right',
+                style: {
+                  background: '#333',
+                  color: '#fff',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                },
+                icon: '⚠️',
+              });
+              return await localStorageService.deleteTodo(id);
             }
           }
           
           // Handle other operations
-          const result = await (target[prop as TodoServiceMethods] as (...args: unknown[]) => Promise<unknown>)(...args);
-          
-          // Keep localStorage in sync with successful API operations
-          if (prop === 'getTodos') {
-            await localStorageService.saveTodosToStorage(result as Todo[]);
-          } else if (prop === 'createTodo' || prop === 'updateTodo') {
-            const todos = await target.getTodos();
-            await localStorageService.saveTodosToStorage(todos);
+          try {
+            const result = await (target[prop as TodoServiceMethods] as (...args: unknown[]) => Promise<unknown>)(...args);
+            
+            // Keep localStorage in sync with successful API operations
+            if (prop === 'getTodos') {
+              await localStorageService.saveTodosToStorage(result as Todo[]);
+            } else if (prop === 'createTodo' || prop === 'updateTodo') {
+              const todos = await target.getTodos();
+              await localStorageService.saveTodosToStorage(todos);
+            }
+            
+            return result;
+          } catch (error) {
+            console.error(`Failed to ${String(prop)} from backend:`, error);
+            toast.error(`Failed to ${String(prop)} from backend. Using local storage.`, {
+              duration: 4000,
+              position: 'bottom-right',
+              style: {
+                background: '#333',
+                color: '#fff',
+                borderRadius: '8px',
+                padding: '16px',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+              },
+              icon: '⚠️',
+            });
+            return await (localStorageService[prop as TodoServiceMethods] as (...args: unknown[]) => Promise<unknown>)(...args);
           }
-          
-          return result;
-        } catch {
-          // If backend is unavailable, use localStorage
-          return await (localStorageService[prop as TodoServiceMethods] as (...args: unknown[]) => Promise<unknown>)(...args);
+        } catch (error) {
+          console.error('Unexpected error:', error);
+          toast.error('An unexpected error occurred. Please try again.', {
+            duration: 4000,
+            position: 'bottom-right',
+            style: {
+              background: '#333',
+              color: '#fff',
+              borderRadius: '8px',
+              padding: '16px',
+              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            },
+            icon: '⚠️',
+          });
+          throw error;
         }
       };
     },
