@@ -1,10 +1,7 @@
-'use client';
-
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { ThemeProvider } from "@/contexts/ThemeContext";
-import ThemeToggle from "@/components/ThemeToggle";
-import { Toaster } from 'react-hot-toast';
+import { Metadata } from 'next';
+import ClientLayout from './ClientLayout';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,6 +12,15 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
 });
+
+export const metadata: Metadata = {
+  title: 'Kadince Todo',
+  description: 'A modern todo application',
+  icons: {
+    icon: '/favicon.ico',
+    apple: '/apple-touch-icon.png',
+  },
+};
 
 export default function RootLayout({
   children,
@@ -27,11 +33,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
       >
-        <ThemeProvider>
-          <ThemeToggle />
-          {children}
-          <Toaster position="bottom-right" />
-        </ThemeProvider>
+        <ClientLayout>{children}</ClientLayout>
       </body>
     </html>
   );
