@@ -19,15 +19,32 @@ export class ApiTodoService implements TodoService {
 
   private async fetchWithErrorHandling<T>(url: string, options?: RequestInit): Promise<T> {
     try {
-      const response = await fetch(url, options);
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          ...options?.headers,
+          'ngrok-skip-browser-warning': 'true'
+        }
+      });
+      
+      // First check if the response is ok
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
+      
       // Return null for 204 No Content responses
       if (response.status === 204) {
         return null as T;
       }
-      return await response.json();
+
+      // Try to parse JSON
+      try {
+        return await response.json();
+      } catch (parseError) {
+        console.error('Failed to parse JSON response:', parseError);
+        console.error('Response text:', await response.text());
+        throw new Error('Invalid JSON response from server');
+      }
     } catch (error) {
       console.error('API Error:', error);
       throw error;
@@ -185,41 +202,15 @@ export function createTodoService(): TodoService {
   let hasShownOfflineToast = false;
   let hasShownOnlineToast = false;
 
-  // Smart merge function to handle offline changes
-  const mergeTodos = (localTodos: Todo[], backendTodos: Todo[]): Todo[] => {
-    const mergedTodos = new Map<string, Todo>();
-    
-    // First, add all backend todos to the map
-    backendTodos.forEach(todo => {
-      mergedTodos.set(todo.id, { ...todo });
-    });
-    
-    // Then, merge local todos, preserving local changes
-    localTodos.forEach(localTodo => {
-      const backendTodo = mergedTodos.get(localTodo.id);
-      
-      if (!backendTodo) {
-        // If it's a new local todo, add it
-        mergedTodos.set(localTodo.id, { ...localTodo });
-      } else {
-        // If the local version is newer, use its values
-        if (new Date(localTodo.updatedAt) > new Date(backendTodo.updatedAt)) {
-          mergedTodos.set(localTodo.id, {
-            ...backendTodo,
-            title: localTodo.title,
-            completed: localTodo.completed,
-            updatedAt: localTodo.updatedAt
-          });
-        }
-      }
-    });
-    
-    return Array.from(mergedTodos.values());
-  };
-
   const checkBackendStatus = async () => {
     try {
-      await fetch('http://localhost:3001/health');
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+      const healthUrl = baseUrl.replace('/api', '/health');
+      await fetch(healthUrl, {
+        headers: {
+          'ngrok-skip-browser-warning': 'true'
+        }
+      });
       
       if (!isBackendAvailable) {
         isBackendAvailable = true;
@@ -262,7 +253,7 @@ export function createTodoService(): TodoService {
           hasShownOnlineToast = true;
         }
       }
-    } catch (error) {
+    } catch {
       if (isBackendAvailable) {
         isBackendAvailable = false;
         hasShownOnlineToast = false;
@@ -298,10 +289,12 @@ export function createTodoService(): TodoService {
     });
   }
 
+  type TodoServiceMethods = keyof TodoService;
+
   // Proxy to handle API/localStorage switching
   return new Proxy(apiService, {
     get(target, prop) {
-      return async function (...args: any[]) {
+      return async function (...args: unknown[]) {
         try {
           if (!isBackendAvailable) {
             throw new Error('Backend unavailable');
@@ -309,36 +302,34 @@ export function createTodoService(): TodoService {
           
           // Special handling for delete operations
           if (prop === 'deleteTodo') {
-            const id = args[0];
+            const id = args[0] as string;
             try {
               // Try to delete from backend first
               await target.deleteTodo(id);
               // If successful, also delete from localStorage
               await localStorageService.deleteTodo(id);
               return;
-            } catch (error) {
-              console.error('Failed to delete from backend:', error);
-              throw error;
+            } catch {
+              console.error('Failed to delete from backend');
+              throw new Error('Failed to delete from backend');
             }
           }
           
           // Handle other operations
-          // @ts-ignore
-          const result = await target[prop](...args);
+          const result = await (target[prop as TodoServiceMethods] as (...args: unknown[]) => Promise<unknown>)(...args);
           
           // Keep localStorage in sync with successful API operations
           if (prop === 'getTodos') {
-            await localStorageService.saveTodosToStorage(result);
+            await localStorageService.saveTodosToStorage(result as Todo[]);
           } else if (prop === 'createTodo' || prop === 'updateTodo') {
             const todos = await target.getTodos();
             await localStorageService.saveTodosToStorage(todos);
           }
           
           return result;
-        } catch (error) {
+        } catch {
           // If backend is unavailable, use localStorage
-          // @ts-ignore
-          return await localStorageService[prop](...args);
+          return await (localStorageService[prop as TodoServiceMethods] as (...args: unknown[]) => Promise<unknown>)(...args);
         }
       };
     },
