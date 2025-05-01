@@ -1,4 +1,5 @@
 import { Todo } from '@/types/todo';
+import toast from 'react-hot-toast';
 
 export interface TodoService {
   getTodos(): Promise<Todo[]>;
@@ -145,6 +146,18 @@ export function createTodoService(): TodoService {
           return await target[prop](...args);
         } catch (error) {
           console.warn('API failed, falling back to localStorage:', error);
+          toast.error('Backend unavailable. Using local storage instead.', {
+            duration: 4000,
+            position: 'bottom-right',
+            style: {
+              background: '#333',
+              color: '#fff',
+              borderRadius: '8px',
+              padding: '16px',
+              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            },
+            icon: '⚠️',
+          });
           // @ts-ignore
           return await localStorageService[prop](...args);
         }
