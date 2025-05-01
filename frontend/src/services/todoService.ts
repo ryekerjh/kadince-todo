@@ -13,7 +13,7 @@ export interface TodoService {
 export class ApiTodoService implements TodoService {
   private baseUrl: string;
 
-  constructor(baseUrl: string = 'http://localhost:3001/api') {
+  constructor(baseUrl: string = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api') {
     this.baseUrl = baseUrl;
   }
 
