@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { RequestHandler } from 'express';
 
 const router = express.Router();
 
@@ -14,24 +14,26 @@ interface Todo {
 let todos: Todo[] = [];
 
 // Get all todos
-router.get('/', (req: Request, res: Response) => {
+const getAllTodos: RequestHandler = (req, res): void => {
   res.json(todos);
-});
+};
 
 // Get todo by id
-router.get('/:id', (req: Request<{ id: string }>, res: Response) => {
+const getTodoById: RequestHandler = (req, res): void => {
   const todo = todos.find(t => t.id === req.params.id);
   if (!todo) {
-    return res.status(404).json({ error: 'Todo not found' });
+    res.status(404).json({ error: 'Todo not found' });
+    return;
   }
   res.json(todo);
-});
+};
 
 // Create todo
-router.post('/', (req: Request<{}, {}, { title: string }>, res: Response) => {
+const createTodo: RequestHandler = (req, res): void => {
   const { title } = req.body;
   if (!title) {
-    return res.status(400).json({ error: 'Title is required' });
+    res.status(400).json({ error: 'Title is required' });
+    return;
   }
 
   const newTodo: Todo = {
@@ -44,15 +46,16 @@ router.post('/', (req: Request<{}, {}, { title: string }>, res: Response) => {
 
   todos.push(newTodo);
   res.status(201).json(newTodo);
-});
+};
 
 // Update todo
-router.put('/:id', (req: Request<{ id: string }, {}, Partial<Todo>>, res: Response) => {
+const updateTodo: RequestHandler = (req, res): void => {
   const { title, completed } = req.body;
   const todoIndex = todos.findIndex(t => t.id === req.params.id);
 
   if (todoIndex === -1) {
-    return res.status(404).json({ error: 'Todo not found' });
+    res.status(404).json({ error: 'Todo not found' });
+    return;
   }
 
   const updatedTodo = {
@@ -64,18 +67,26 @@ router.put('/:id', (req: Request<{ id: string }, {}, Partial<Todo>>, res: Respon
 
   todos[todoIndex] = updatedTodo;
   res.json(updatedTodo);
-});
+};
 
 // Delete todo
-router.delete('/:id', (req: Request<{ id: string }>, res: Response) => {
+const deleteTodo: RequestHandler = (req, res): void => {
   const todoIndex = todos.findIndex(t => t.id === req.params.id);
   
   if (todoIndex === -1) {
-    return res.status(404).json({ error: 'Todo not found' });
+    res.status(404).json({ error: 'Todo not found' });
+    return;
   }
 
   todos.splice(todoIndex, 1);
   res.status(204).send();
-});
+};
+
+// Register routes
+router.get('/', getAllTodos);
+router.get('/:id', getTodoById);
+router.post('/', createTodo);
+router.put('/:id', updateTodo);
+router.delete('/:id', deleteTodo);
 
 export default router;
