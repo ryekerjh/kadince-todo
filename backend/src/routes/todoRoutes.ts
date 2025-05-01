@@ -1,66 +1,48 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
+import asyncHandler from 'express-async-handler';
 import { Todo } from '../types/todo';
 import { todoService } from '../services/todoService';
 
 const router = express.Router();
 
 // Health check endpoint
-router.get('/health', (req, res) => {
+router.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'ok' });
 });
 
 // Get all todos
-router.get('/todos', async (req, res) => {
-  try {
-    const todos = await todoService.getTodos();
-    res.json(todos);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch todos' });
-  }
-});
+router.get('/todos', asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const todos = await todoService.getTodos();
+  res.json(todos);
+}));
 
 // Get a single todo
-router.get('/todos/:id', async (req, res) => {
-  try {
-    const todo = await todoService.getTodo(req.params.id);
-    res.json(todo);
-  } catch (error) {
-    res.status(404).json({ error: 'Todo not found' });
-  }
-});
+router.get('/todos/:id', asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const todo = await todoService.getTodo(req.params.id as string);
+  res.json(todo);
+}));
 
 // Create a new todo
-router.post('/todos', async (req, res) => {
-  try {
-    const { title, completed } = req.body;
-    if (!title) {
-      return res.status(400).json({ error: 'Title is required' });
-    }
-    const todo = await todoService.createTodo(title, completed);
-    res.status(201).json(todo);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to create todo' });
+router.post('/todos', asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const { title, completed } = req.body as { title: string; completed?: boolean };
+  if (!title) {
+    res.status(400).json({ error: 'Title is required' });
+    return;
   }
-});
+  const todo = await todoService.createTodo(title, completed);
+  res.status(201).json(todo);
+}));
 
 // Update a todo
-router.put('/todos/:id', async (req, res) => {
-  try {
-    const todo = await todoService.updateTodo(req.params.id, req.body);
-    res.json(todo);
-  } catch (error) {
-    res.status(404).json({ error: 'Todo not found' });
-  }
-});
+router.put('/todos/:id', asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const todo = await todoService.updateTodo(req.params.id as string, req.body as Partial<Todo>);
+  res.json(todo);
+}));
 
 // Delete a todo
-router.delete('/todos/:id', async (req, res) => {
-  try {
-    await todoService.deleteTodo(req.params.id);
-    res.status(204).send();
-  } catch (error) {
-    res.status(404).json({ error: 'Todo not found' });
-  }
-});
+router.delete('/todos/:id', asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  await todoService.deleteTodo(req.params.id as string);
+  res.status(204).send();
+}));
 
 export default router; 

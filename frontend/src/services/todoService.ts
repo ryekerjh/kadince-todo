@@ -84,10 +84,6 @@ export class ApiTodoService implements TodoService {
             createdAt: todo.createdAt,
             updatedAt: todo.updatedAt
           }),
-        }).then(createdTodo => {
-          // Update the local todo with the backend ID
-          todo.id = createdTodo.id;
-          return todo;
         })
       ));
     }
@@ -168,7 +164,7 @@ export class LocalStorageTodoService implements TodoService {
   }
 
   async syncTodos(todos: Todo[]): Promise<void> {
-    // For LocalStorageTodoService, sync is a no-op since we're already working with the local state
+    this.saveTodosToStorage(todos);
     return Promise.resolve();
   }
 }
@@ -183,108 +179,115 @@ export function createTodoService(): TodoService {
   // Try to use API first, fall back to localStorage if it fails
   const apiService = new ApiTodoService();
   const localStorageService = new LocalStorageTodoService();
-  let hasShownBackendUnavailableToast = false;
-  let isBackendAvailable = true;
-  let checkInterval: NodeJS.Timeout | null = null;
+
+  // Track backend availability
+  let isBackendAvailable = false;
+  let hasShownOfflineToast = false;
+  let hasShownOnlineToast = false;
+
+  // Smart merge function to handle offline changes
+  const mergeTodos = (localTodos: Todo[], backendTodos: Todo[]): Todo[] => {
+    const mergedTodos = new Map<string, Todo>();
+    
+    // First, add all backend todos to the map
+    backendTodos.forEach(todo => {
+      mergedTodos.set(todo.id, { ...todo });
+    });
+    
+    // Then, merge local todos, preserving local changes
+    localTodos.forEach(localTodo => {
+      const backendTodo = mergedTodos.get(localTodo.id);
+      
+      if (!backendTodo) {
+        // If it's a new local todo, add it
+        mergedTodos.set(localTodo.id, { ...localTodo });
+      } else {
+        // If the local version is newer, use its values
+        if (new Date(localTodo.updatedAt) > new Date(backendTodo.updatedAt)) {
+          mergedTodos.set(localTodo.id, {
+            ...backendTodo,
+            title: localTodo.title,
+            completed: localTodo.completed,
+            updatedAt: localTodo.updatedAt
+          });
+        }
+      }
+    });
+    
+    return Array.from(mergedTodos.values());
+  };
 
   const checkBackendStatus = async () => {
     try {
       await fetch('http://localhost:3001/health');
+      
       if (!isBackendAvailable) {
         isBackendAvailable = true;
-        hasShownBackendUnavailableToast = false;
+        hasShownOfflineToast = false;
         
-        // Get current todos from localStorage
-        const currentTodos = await localStorageService.getTodos();
+        // When coming back online, treat localStorage as source of truth
+        const localTodos = await localStorageService.getTodos();
         
-        // Get todos from backend
-        const backendTodos = await apiService.getTodos();
-        
-        // If we have todos in localStorage but not in backend, sync them
-        if (currentTodos.length > 0 && backendTodos.length === 0) {
-          try {
-            await apiService.syncTodos(currentTodos);
-            toast.success(`Synced ${currentTodos.length} todos to the server!`, {
-              duration: 4000,
-              position: 'bottom-right',
-              style: {
-                background: '#333',
-                color: '#fff',
-                borderRadius: '8px',
-                padding: '16px',
-                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-              },
-              icon: '✅',
-            });
-          } catch (error) {
-            console.error('Failed to sync todos:', error);
-            toast.error('Failed to sync todos to server. They will remain in local storage.', {
-              duration: 4000,
-              position: 'bottom-right',
-              style: {
-                background: '#333',
-                color: '#fff',
-                borderRadius: '8px',
-                padding: '16px',
-                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-              },
-              icon: '⚠️',
-            });
-          }
-        } else if (backendTodos.length > 0) {
-          // If backend has todos, merge them with localStorage
-          const mergedTodos = [...backendTodos];
-          currentTodos.forEach(todo => {
-            const existingIndex = mergedTodos.findIndex(t => t.id === todo.id);
-            if (existingIndex === -1) {
-              // New todo created while offline
-              mergedTodos.push(todo);
-            } else {
-              // Update existing todo with any changes made while offline
-              const existingTodo = mergedTodos[existingIndex];
-              mergedTodos[existingIndex] = {
-                ...existingTodo,
-                title: todo.title,
-                completed: todo.completed,
-                updatedAt: new Date()
-              };
-            }
-          });
+        if (localTodos.length > 0) {
+          // Sync local todos to backend
+          await apiService.syncTodos(localTodos);
           
-          // Update both backend and localStorage with merged state
-          await apiService.syncTodos(mergedTodos);
-          await localStorageService.saveTodosToStorage(mergedTodos);
+          toast.success('Successfully synced local changes to server!', {
+            duration: 4000,
+            position: 'bottom-right',
+            style: {
+              background: '#333',
+              color: '#fff',
+              borderRadius: '8px',
+              padding: '16px',
+              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            },
+            icon: '✅',
+          });
         }
-
-        toast.success('Backend reconnected! Using server storage again.', {
-          duration: 4000,
-          position: 'bottom-right',
-          style: {
-            background: '#333',
-            color: '#fff',
-            borderRadius: '8px',
-            padding: '16px',
-            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-          },
-          icon: '✅',
-        });
+        
+        if (!hasShownOnlineToast) {
+          toast.success('Backend reconnected! Using server storage.', {
+            duration: 4000,
+            position: 'bottom-right',
+            style: {
+              background: '#333',
+              color: '#fff',
+              borderRadius: '8px',
+              padding: '16px',
+              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            },
+            icon: '✅',
+          });
+          hasShownOnlineToast = true;
+        }
       }
     } catch (error) {
       if (isBackendAvailable) {
-        // Backend just went down, get the latest state from backend
-        try {
-          const todos = await apiService.getTodos();
-          await localStorageService.saveTodosToStorage(todos);
-        } catch (backupError) {
-          console.error('Failed to backup todos:', backupError);
+        isBackendAvailable = false;
+        hasShownOnlineToast = false;
+        
+        if (!hasShownOfflineToast) {
+          toast.error('Backend unavailable. Using local storage.', {
+            duration: 4000,
+            position: 'bottom-right',
+            style: {
+              background: '#333',
+              color: '#fff',
+              borderRadius: '8px',
+              padding: '16px',
+              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            },
+            icon: '⚠️',
+          });
+          hasShownOfflineToast = true;
         }
       }
-      isBackendAvailable = false;
     }
   };
 
   // Start checking backend status every 5 seconds
-  checkInterval = setInterval(checkBackendStatus, 5000);
+  const checkInterval = setInterval(checkBackendStatus, 5000);
 
   // Clean up interval when the service is no longer needed
   if (typeof window !== 'undefined') {
@@ -295,61 +298,45 @@ export function createTodoService(): TodoService {
     });
   }
 
-  // Test API connection
+  // Proxy to handle API/localStorage switching
   return new Proxy(apiService, {
     get(target, prop) {
       return async function (...args: any[]) {
         try {
+          if (!isBackendAvailable) {
+            throw new Error('Backend unavailable');
+          }
+          
+          // Special handling for delete operations
+          if (prop === 'deleteTodo') {
+            const id = args[0];
+            try {
+              // Try to delete from backend first
+              await target.deleteTodo(id);
+              // If successful, also delete from localStorage
+              await localStorageService.deleteTodo(id);
+              return;
+            } catch (error) {
+              console.error('Failed to delete from backend:', error);
+              throw error;
+            }
+          }
+          
+          // Handle other operations
           // @ts-ignore
           const result = await target[prop](...args);
           
-          // If backend is available, keep localStorage in sync
-          if (isBackendAvailable) {
-            if (prop === 'getTodos') {
-              console.log('I think Im in the right place :thumbs:', result)
-              // Update localStorage with the latest todos from backend
-              await localStorageService.saveTodosToStorage(result);
-            } else if (prop === 'createTodo') {
-              // Add the new todo to localStorage
-              const todos = await localStorageService.getTodos();
-              todos.push(result);
-              await localStorageService.saveTodosToStorage(todos);
-            } else if (prop === 'updateTodo') {
-              // Update the todo in localStorage
-              const todos = await localStorageService.getTodos();
-              const index = todos.findIndex(t => t.id === result.id);
-              if (index !== -1) {
-                todos[index] = result;
-                await localStorageService.saveTodosToStorage(todos);
-              }
-            } else if (prop === 'deleteTodo') {
-              // Remove the todo from localStorage
-              const todos = await localStorageService.getTodos();
-              const filteredTodos = todos.filter(t => t.id !== args[0]);
-              await localStorageService.saveTodosToStorage(filteredTodos);
-            }
+          // Keep localStorage in sync with successful API operations
+          if (prop === 'getTodos') {
+            await localStorageService.saveTodosToStorage(result);
+          } else if (prop === 'createTodo' || prop === 'updateTodo') {
+            const todos = await target.getTodos();
+            await localStorageService.saveTodosToStorage(todos);
           }
           
           return result;
         } catch (error) {
-          console.warn('API failed, falling back to localStorage:', error);
-          
-          if (!hasShownBackendUnavailableToast) {
-            toast.error('Backend unavailable. Using local storage instead.', {
-              duration: 4000,
-              position: 'bottom-right',
-              style: {
-                background: '#333',
-                color: '#fff',
-                borderRadius: '8px',
-                padding: '16px',
-                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-              },
-              icon: '⚠️',
-            });
-            hasShownBackendUnavailableToast = true;
-          }
-          
+          // If backend is unavailable, use localStorage
           // @ts-ignore
           return await localStorageService[prop](...args);
         }
