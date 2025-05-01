@@ -8,7 +8,7 @@ const queryClient = new QueryClient();
 export default function Home() {
   return (
     <QueryClientProvider client={queryClient}>
-      <main className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
+      <main className="min-h-screen bg-kadince-pink dark:bg-gray-900 py-8">
         <TodoList />
       </main>
     </QueryClientProvider>
