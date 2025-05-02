@@ -11,7 +11,7 @@ const port = process.env.PORT || 3001;
 
 // Configure CORS
 app.use(cors({
-  origin: '*', // During development, allow all origins
+  origin: process.env.CORS_ORIGIN || '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'ngrok-skip-browser-warning'],
   credentials: true
@@ -22,6 +22,11 @@ app.use(express.json());
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
+});
+
+// OPTIONS handler for health check (CORS preflight)
+app.options('/health', (req, res) => {
+  res.sendStatus(200);
 });
 
 // Routes
